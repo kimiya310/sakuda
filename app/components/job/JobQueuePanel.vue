@@ -19,6 +19,7 @@ const hasJobs = computed(() => jobs.value.length > 0)
 
 function label(job: JobView): string {
   if (job.kind === 'scan') return `scan · ${(job.engines ?? []).join(', ') || 'no engines'}`
+  if (job.kind === 'platform') return 'platform quick check'
   return 'discovery'
 }
 

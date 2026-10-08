@@ -271,3 +271,93 @@ describe('api e2e', () => {
     expect(JSON.stringify(body)).toContain('nonLocalConfirmed')
   })
 })
+
+// Platform API tests only: the job runner is disabled above and targets are
+// literal fixture IPs, so neither DNS nor diagnostic sockets are used.
+describe('platform API e2e (no diagnostic execution)', () => {
+  let groupId: string
+  let runId: string
+  let scopeToken: string
+  it('rejects unsafe targets and creates a pinned LAN manifest without starting a scan', async () => {
+    const config = {
+      customer: 'Synthetic customer',
+      name: 'Synthetic platform',
+      targets: '10.254.254.1',
+      exclusions: '',
+      ports: [22],
+      tlsPorts: [],
+      location: 'lan',
+    }
+    const unsafe = await postJson('/api/platform/groups', { ...config, targets: '127.0.0.1' })
+    expect(unsafe.status).toBe(422)
+    const res = await postJson('/api/platform/groups', config)
+    expect(res.status).toBe(201)
+    const group: unknown = await res.json()
+    groupId = requireId(group)
+    expect(group).toMatchObject({
+      config: { customer: 'Synthetic customer' },
+      scope: { assets: [{ host: '10.254.254.1', address: '10.254.254.1' }], hostCount: 1 },
+    })
+    if (!isRecord(group) || !isRecord(group.scope) || typeof group.scope.scopeToken !== 'string')
+      throw new Error('Missing scope token')
+    scopeToken = group.scope.scopeToken
+    const list = await fetch(`/api/platform/groups/${groupId}`)
+    expect(await list.json()).toMatchObject({ runs: [] })
+  })
+  it('marks API and SSR platform responses as private and non-cacheable', async () => {
+    for (const path of ['/api/platform/groups', '/platform', `/platform/groups/${groupId}`]) {
+      const res = await fetch(path)
+      expect(res.status).toBe(200)
+      expect(res.headers.get('cache-control')).toContain('private')
+      expect(res.headers.get('cache-control')).toContain('no-store')
+    }
+  })
+  it('requires written consent and exact scope count before queueing', async () => {
+    const consent = {
+      expectedHostCount: 1,
+      scopeToken,
+      administrator: 'Fixture owner',
+      authorizationReference: 'Synthetic written approval',
+      windowStart: new Date(Date.now() - 60000).toISOString(),
+      windowEnd: new Date(Date.now() + 60000).toISOString(),
+      permissionConfirmed: true,
+      segmentsConfirmed: true,
+    }
+    const denied = await postJson(`/api/platform/groups/${groupId}/runs`, {
+      ...consent,
+      permissionConfirmed: false,
+    })
+    expect(denied.status).toBe(422)
+    const res = await postJson(`/api/platform/groups/${groupId}/runs`, consent)
+    expect(res.status).toBe(201)
+    const run: unknown = await res.json()
+    runId = requireId(run)
+    expect(run).toMatchObject({
+      status: 'queued',
+      result: { endpoints: [expect.objectContaining({ status: 'not-run' })] },
+    })
+  })
+  it('blocks unreviewed report and active deletion, then cancels without diagnostic traffic', async () => {
+    expect((await fetch(`/api/platform/runs/${runId}/report.md`)).status).toBe(409)
+    expect((await fetch(`/api/platform/groups/${groupId}`, { method: 'DELETE' })).status).toBe(409)
+    const cancelled = await postJson(`/api/platform/runs/${runId}/cancel`, {})
+    expect(await cancelled.json()).toMatchObject({ status: 'cancelled' })
+  })
+  it('exports reviewed incomplete results with disclaimers and deletes only this group', async () => {
+    const review = await postJson(`/api/platform/runs/${runId}/review`, {
+      reviewer: 'Internal fixture operator',
+      notes: 'All diagnostics were intentionally unexecuted.',
+      nextSupport: 'Obtain explicit permission and perform manual approved smoke testing.',
+    })
+    expect(review.status).toBe(200)
+    const report = await fetch(`/api/platform/runs/${runId}/report.md`)
+    expect(report.status).toBe(200)
+    expect(report.headers.get('cache-control')).toContain('no-store')
+    const markdown = await report.text()
+    expect(markdown).toContain('安全性を保証するものではありません')
+    expect(markdown).toContain('not-run')
+    expect(markdown).toContain('次に提案する支援')
+    expect((await fetch(`/api/platform/groups/${groupId}`, { method: 'DELETE' })).status).toBe(200)
+    expect((await fetch(`/api/platform/runs/${runId}`)).status).toBe(404)
+  })
+})

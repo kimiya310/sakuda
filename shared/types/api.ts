@@ -245,7 +245,7 @@ export interface TargetSummary {
  * in the job loop's claim order (running first, then queued scans oldest-first,
  * then queued discoveries oldest-first) — display order = execution order. */
 export interface JobView {
-  kind: 'scan' | 'discovery'
+  kind: 'scan' | 'discovery' | 'platform'
   status: 'running' | 'queued'
   id: string
   siteId: string

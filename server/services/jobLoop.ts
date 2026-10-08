@@ -1,3 +1,5 @@
+import { claimNextPlatformRun } from './platformService'
+import { runPlatform, type PlatformRunnerDeps } from './platformRunner'
 import { claimNextQueuedDiscovery } from './discoveryService'
 import { runDiscovery, type DiscoveryRunnerDeps } from './discoveryRunner'
 import { claimNextQueuedScan } from './scanService'
@@ -9,9 +11,10 @@ export interface JobLoop {
   isBusy(): boolean
 }
 
-export type JobLoopDeps = ScanRunnerDeps & DiscoveryRunnerDeps & { pollMs: number }
+export type JobLoopDeps = ScanRunnerDeps &
+  DiscoveryRunnerDeps & { pollMs: number; platformCheck?: PlatformRunnerDeps['platformCheck'] }
 
-/** Single sequential worker over two queues. Scans are claimed before
+/** Single sequential worker over three queues (scans, discovery, platform). Scans are claimed before
  * discoveries so a queued scan is never starved by repeated discoveries;
  * within a queue, oldest first. */
 export function createJobLoop(deps: JobLoopDeps): JobLoop {
@@ -33,6 +36,14 @@ export function createJobLoop(deps: JobLoopDeps): JobLoop {
         runDiscovery(deps, discoveryId, ac.signal).catch((e: unknown) =>
           deps.logger.error({ discoveryId, err: e }, 'runDiscovery crashed'),
         )
+    if (deps.platformCheck) {
+      const platformId = claimNextPlatformRun(deps.db, deps.now)
+      if (platformId)
+        return () =>
+          runPlatform({ ...deps, platformCheck: deps.platformCheck! }, platformId, ac.signal).catch(
+            () => deps.logger.error({ platformId }, 'platform job failed'),
+          )
+    }
     return null
   }
 

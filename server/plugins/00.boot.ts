@@ -1,3 +1,5 @@
+import { runPlatformChecks } from '../engines/platform'
+import { purgePlatformHistory, recoverPlatformRuns } from '../services/platformService'
 import { randomUUID } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { EnvError, getEnv } from '../config/env'
@@ -25,6 +27,9 @@ export default defineNitroPlugin((nitroApp) => {
   mkdirSync(env.discoveriesDir, { recursive: true })
   const db = getDb()
 
+  recoverPlatformRuns(db, () => new Date())
+  purgePlatformHistory(db, () => new Date(), env.platformRetentionDays)
+
   const recovered = recoverInterruptedScans(db, () => new Date())
   if (recovered > 0) logger.warn({ recovered }, 'marked interrupted scans as failed')
   const recoveredDiscoveries = recoverInterruptedDiscoveries(db, () => new Date())
@@ -42,6 +47,7 @@ export default defineNitroPlugin((nitroApp) => {
     cipher: createSiteCipher(env.encryptionKey),
     runners: engineRunners,
     discover: runDiscover,
+    platformCheck: (run, signal) => runPlatformChecks(run, signal, { nucleiBin: env.nuclei.bin }),
     logger,
     now: () => new Date(),
     id: randomUUID,
@@ -53,7 +59,14 @@ export default defineNitroPlugin((nitroApp) => {
     'job runner started',
   )
 
+  const retentionTimer = setInterval(
+    () => purgePlatformHistory(db, () => new Date(), env.platformRetentionDays),
+    3600000,
+  )
+  retentionTimer.unref()
+
   nitroApp.hooks.hook('close', async () => {
+    clearInterval(retentionTimer)
     await loop.stop()
     closeDb()
   })

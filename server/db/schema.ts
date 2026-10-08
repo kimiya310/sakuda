@@ -144,3 +144,50 @@ export type DiscoveryRow = typeof discoveries.$inferSelect
 export type ScanRow = typeof scans.$inferSelect
 export type EngineRunRow = typeof engineRuns.$inferSelect
 export type FindingRow = typeof findings.$inferSelect
+
+/** Customer-scoped platform inventory; deliberately independent of URL-based sites. */
+export const platformGroups = sqliteTable('platform_groups', {
+  id: text('id').primaryKey(),
+  config: text('config', { mode: 'json' })
+    .$type<import('#shared/schemas/platform').PlatformInput>()
+    .notNull(),
+  scope: text('scope', { mode: 'json' })
+    .$type<import('#shared/types/platform').PlatformScope>()
+    .notNull(),
+  createdAt: text('created_at').notNull(),
+})
+export const platformRuns = sqliteTable(
+  'platform_runs',
+  {
+    id: text('id').primaryKey(),
+    groupId: text('group_id')
+      .notNull()
+      .references(() => platformGroups.id, { onDelete: 'cascade' }),
+    status: text('status', {
+      enum: ['queued', 'running', 'done', 'failed', 'cancelled'],
+    }).notNull(),
+    snapshot: text('snapshot', { mode: 'json' })
+      .$type<import('#shared/schemas/platform').PlatformInput>()
+      .notNull(),
+    scope: text('scope', { mode: 'json' })
+      .$type<import('#shared/types/platform').PlatformScope>()
+      .notNull(),
+    authorization: text('authorization', { mode: 'json' })
+      .$type<import('#shared/schemas/platform').PlatformStart>()
+      .notNull(),
+    result: text('result', { mode: 'json' })
+      .$type<import('#shared/types/platform').PlatformResult>()
+      .notNull(),
+    review: text('review', { mode: 'json' }).$type<
+      import('#shared/types/platform').PlatformRun['review']
+    >(),
+    createdAt: text('created_at').notNull(),
+    startedAt: text('started_at'),
+    finishedAt: text('finished_at'),
+    error: text('error'),
+  },
+  (t) => [
+    index('platform_runs_group_created_idx').on(t.groupId, t.createdAt),
+    index('platform_runs_status_idx').on(t.status),
+  ],
+)

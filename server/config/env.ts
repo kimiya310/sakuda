@@ -96,6 +96,7 @@ const EnvSchema = z.object({
   SAKUDA_LOCALHOST_ALIAS: optionalString,
   SAKUDA_ZAP_LOCALHOST_ALIAS: optionalString,
   SAKUDA_ENGINE_GRACE_MINUTES: z.coerce.number().int().nonnegative().default(10),
+  SAKUDA_PLATFORM_RETENTION_DAYS: z.coerce.number().int().min(1).max(365).default(30),
   SAKUDA_JOB_RUNNER: z.enum(['on', 'off']).default('on'),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
 })
@@ -139,6 +140,7 @@ export interface Env {
     localhostAlias: string | undefined
   }
   engineGraceMinutes: number
+  platformRetentionDays: number
   jobRunner: boolean
   logLevel: 'debug' | 'info' | 'warn' | 'error'
 }
@@ -186,6 +188,7 @@ export function parseEnv(raw: NodeJS.ProcessEnv): Env {
       localhostAlias: v.SAKUDA_ZAP_LOCALHOST_ALIAS ?? v.SAKUDA_LOCALHOST_ALIAS,
     },
     engineGraceMinutes: v.SAKUDA_ENGINE_GRACE_MINUTES,
+    platformRetentionDays: v.SAKUDA_PLATFORM_RETENTION_DAYS,
     jobRunner: v.SAKUDA_JOB_RUNNER === 'on',
     logLevel: v.LOG_LEVEL,
   }
