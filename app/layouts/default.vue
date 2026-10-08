@@ -35,6 +35,9 @@ function onSwitch(event: Event) {
           >sakuda</NuxtLink
         >
         <div class="flex items-center gap-3">
+          <NuxtLink to="/platform" class="text-button-sm font-medium text-ink underline"
+            >Platform</NuxtLink
+          >
           <select
             v-if="hasSites"
             data-testid="site-switcher"

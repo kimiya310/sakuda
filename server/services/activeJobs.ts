@@ -1,6 +1,6 @@
-import { and, asc, eq, inArray } from 'drizzle-orm'
+import { and, asc, eq, inArray, or, isNull } from 'drizzle-orm'
 import type { Db } from '../db/client'
-import { discoveries, scans, sites } from '../db/schema'
+import { discoveries, scans, sites, platformRuns } from '../db/schema'
 import type { JobView } from '#shared/types/api'
 
 export const ACTIVE_JOB_STATUSES = ['queued', 'running'] as const
@@ -70,6 +70,26 @@ export function listActiveJobs(db: Db): JobView[] {
     .orderBy(asc(discoveries.createdAt))
     .all()
 
+  const platformJobs = db
+    .select()
+    .from(platformRuns)
+    .where(
+      or(
+        inArray(platformRuns.status, [...ACTIVE_JOB_STATUSES]),
+        and(eq(platformRuns.status, 'cancelled'), isNull(platformRuns.finishedAt)),
+      ),
+    )
+    .orderBy(asc(platformRuns.createdAt))
+    .all()
+    .map((r): JobView => ({
+      kind: 'platform',
+      id: r.id,
+      siteId: r.groupId,
+      siteName: `${r.snapshot.customer} / ${r.snapshot.name}`,
+      status: r.status === 'cancelled' ? 'running' : (r.status as 'running' | 'queued'),
+      createdAt: r.createdAt,
+      startedAt: r.startedAt,
+    }))
   const scanJobs = scanRows.map((r): JobView => ({
     kind: 'scan',
     status: r.status as 'running' | 'queued',
@@ -95,7 +115,7 @@ export function listActiveJobs(db: Db): JobView[] {
   // is sequential so there is only ever one running job, but order the running
   // section by start time (kind as tie-breaker, scan first) so the display
   // stays correct even if that ever changes.
-  const running = [...scanJobs, ...discoveryJobs]
+  const running = [...scanJobs, ...discoveryJobs, ...platformJobs]
     .filter((j) => j.status === 'running')
     .sort((a, b) => {
       const at = a.startedAt ?? a.createdAt
@@ -105,5 +125,10 @@ export function listActiveJobs(db: Db): JobView[] {
     })
   const queuedScans = scanJobs.filter((j) => j.status === 'queued')
   const queuedDiscoveries = discoveryJobs.filter((j) => j.status === 'queued')
-  return [...running, ...queuedScans, ...queuedDiscoveries]
+  return [
+    ...running,
+    ...queuedScans,
+    ...queuedDiscoveries,
+    ...platformJobs.filter((j) => j.status === 'queued'),
+  ]
 }

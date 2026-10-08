@@ -25,8 +25,17 @@ katana crawl the site, you review the URLs they found and save the ones you
 want as target paths, and nuclei scans that saved list on every run — no need
 to crawl again until the site changes.
 
-MVP scope: sites → scans → per-engine reports. See
-[Not in this MVP](#not-in-this-mvp) for what's deliberately out.
+Separate from the Web/API workflow, an internal-operator **platform quick
+check** is also available. For authorized hosts, IPs, and IPv4 CIDRs, it pins
+the expanded and resolved manifest for confirmation before running bounded,
+low-load TCP service, TLS, and approved checks. Findings are separated into
+confirmed, version-inferred, and needs-review results, and Markdown export is
+available only after operator review. Broad UDP discovery, OS/cloud
+configuration audits, and penetration testing are out of scope.
+
+Initial scope: sites → scans → per-engine reports, plus platform targets →
+quick checks → reviewed reports. See [Not in this MVP](#not-in-this-mvp) for
+what's deliberately out.
 
 **Scan report** — severity summary, the diff against the previous scan, and a
 per-engine panel with its status, run time and time limit:
@@ -151,6 +160,7 @@ Override per invocation with `make up SAKUDA_PORT=3005`.
 | `SAKUDA_LOCALHOST_ALIAS`          | _(unset)_                                                 | Rewrites `localhost`/`127.0.0.1` in target URLs for all engines.                                                                 |
 | `SAKUDA_ZAP_LOCALHOST_ALIAS`      | `host.docker.internal`                                    | Same, for ZAP only (falls back to `SAKUDA_LOCALHOST_ALIAS`). ZAP's Firefox treats this host as a secure context.                 |
 | `SAKUDA_ENGINE_GRACE_MINUTES`     | `10`                                                      | Grace period before an orphaned engine process is treated as failed.                                                             |
+| `SAKUDA_PLATFORM_RETENTION_DAYS`  | `30`                                                      | 1–365 days; terminal platform results purged at boot and hourly while runner enabled.                                            |
 | `SAKUDA_JOB_RUNNER`               | `on`                                                      | Set `off` to disable the in-process scan queue (e.g. in tests).                                                                  |
 | `LOG_LEVEL`                       | `info`                                                    | `debug` \| `info` \| `warn` \| `error`.                                                                                          |
 
@@ -166,7 +176,7 @@ make env                    # .env with a fresh key (or: cp .env.example .env &&
 
 nuclei, katana, dalfox and httpx run as native binaries and ZAP runs via Docker in dev:
 
-- Install nuclei locally (e.g. `go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest`)
+- Install nuclei locally (e.g. `go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@v3.11.1`)
   and clone [nuclei-templates](https://github.com/projectdiscovery/nuclei-templates),
   then point `.env` at them: `SAKUDA_NUCLEI_BIN`, `SAKUDA_NUCLEI_TEMPLATES`.
 - Install katana locally (`go install github.com/projectdiscovery/katana/cmd/katana@v1.7.0`,
@@ -387,3 +397,5 @@ site-tree dump; katana's seeds, logs and JSONL under `katana/`) live under
 their own licenses: nuclei, katana, httpx, dalfox and nuclei-templates (MIT)
 are downloaded, checksum-verified, at image build time, and ZAP (Apache-2.0)
 is the image's base layer. None of them is vendored into this repository.
+
+Platform runner uses the shared sequential queue after Web/API scans and discoveries. Custom nuclei binaries require 3.11.1-compatible offline validation before operational use. Redis PING requires separately approved ports; empty by default. Native service/version identification is limited to greeting/banner protocols (currently OpenSSH and Redis hints); unknown products/versions remain unverified.

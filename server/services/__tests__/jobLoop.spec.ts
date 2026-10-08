@@ -1,3 +1,5 @@
+import { createPlatformGroup, createPlatformRun, getPlatformRun } from '../platformService'
+import { PlatformInputSchema } from '#shared/schemas/platform'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fileURLToPath } from 'node:url'
 import { randomBytes, randomUUID } from 'node:crypto'
@@ -150,5 +152,60 @@ describe('createJobLoop', () => {
     expect(discover).toHaveBeenCalledTimes(1)
 
     await loop.stop()
+  })
+})
+
+describe('platform jobs share the sequential worker', () => {
+  it('claims and completes a platform job through the shared loop with mocked probes only', async () => {
+    const group = await createPlatformGroup(
+      { db, now, id },
+      PlatformInputSchema.parse({
+        customer: 'Fixture',
+        name: 'Platform fixture',
+        targets: '10.254.254.1',
+        ports: [22],
+        tlsPorts: [],
+        location: 'lan',
+      }),
+    )
+    const run = createPlatformRun({ db, now, id }, group.id, {
+      expectedHostCount: group.scope.hostCount,
+      scopeToken: group.scope.scopeToken,
+      administrator: 'Owner',
+      authorizationReference: 'Synthetic approval',
+      windowStart: '2026-02-01T00:00:00Z',
+      windowEnd: '2026-02-01T01:00:00Z',
+      permissionConfirmed: true,
+      segmentsConfirmed: true,
+    })
+    const platformCheck = vi.fn(async () => ({
+      endpoints: [],
+      findings: [],
+      warnings: ['Fixture only'],
+    }))
+    const loop = createJobLoop({
+      db,
+      env,
+      cipher: siteDeps.cipher,
+      runners: {
+        nuclei: async () => successOutput(),
+        'zap-api': async () => successOutput(),
+        'zap-fe': async () => successOutput(),
+      },
+      discover: async () => ({ urls: [], meta: {}, warnings: [], exitCode: 0, signal: null }),
+      logger,
+      now,
+      id,
+      pollMs: 10,
+      platformCheck,
+    })
+    loops.push(loop)
+    loop.start()
+    await vi.waitFor(() => expect(getPlatformRun(db, run.id).status).toBe('done'), {
+      timeout: 2000,
+      interval: 5,
+    })
+    await loop.stop()
+    expect(platformCheck).toHaveBeenCalledOnce()
   })
 })

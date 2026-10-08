@@ -24,7 +24,14 @@ DOM XSS）でスキャンを実行し、結果を UI で閲覧します。**デ�
 確認して必要なものをターゲットパスとして保存し、nuclei は毎回その保存済みリストを
 スキャンします — サイトが変わるまでクロールし直す必要はありません。
 
-MVP のスコープ: サイト → スキャン → エンジン別レポート。意図的に外したものは
+Web / API チェックとは別に、社内担当者向けの **プラットフォーム簡易チェック**も
+利用できます。許可済みのホスト・IP・IPv4 CIDRについて、実行前に展開・名前解決後の
+固定対象を確認し、低負荷でTCPサービス、TLS、承認済みの限定チェックを実行します。
+結果は「検査で確認」「バージョン等からの推定」「要確認」に分け、担当者レビュー後に
+Markdownレポートを出力します。UDP探索、OS・クラウド設定監査、侵入テストは対象外です。
+
+初期スコープ: サイト → スキャン → エンジン別レポート、およびプラットフォーム対象 →
+簡易チェック → レビュー済みレポート。意図的に外したものは
 [この MVP に含まれないもの](#この-mvp-に含まれないもの)を参照。
 
 **スキャンレポート** — 深刻度サマリ、前回スキャンとの差分、ステータス・実行時間・
@@ -148,6 +155,7 @@ docker run -d --name sakuda -p 127.0.0.1:3001:3000 --shm-size=1g \
 | `SAKUDA_LOCALHOST_ALIAS`          | _(未設定)_                                                 | 全エンジン向けに、ターゲット URL の `localhost` / `127.0.0.1` を書き換える。                                                                 |
 | `SAKUDA_ZAP_LOCALHOST_ALIAS`      | `host.docker.internal`                                     | 同上、ZAP 専用（未設定なら `SAKUDA_LOCALHOST_ALIAS` にフォールバック）。ZAP の Firefox はこのホストを secure context として扱う。            |
 | `SAKUDA_ENGINE_GRACE_MINUTES`     | `10`                                                       | 孤立したエンジンプロセスを失敗扱いにするまでの猶予時間。                                                                                     |
+| `SAKUDA_PLATFORM_RETENTION_DAYS`  | `30`                                                       | 1〜365日。終端状態の結果のみ起動時・runner有効時は毎時削除。                                                                                 |
 | `SAKUDA_JOB_RUNNER`               | `on`                                                       | `off` でインプロセスのスキャンキューを無効化（テスト時など）。                                                                               |
 | `LOG_LEVEL`                       | `info`                                                     | `debug` \| `info` \| `warn` \| `error`。                                                                                                     |
 
@@ -165,7 +173,7 @@ make env                    # 新しい鍵入りの .env（または: cp .env.ex
 経由で動きます:
 
 - nuclei をローカルにインストールし（例:
-  `go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest`）、
+  `go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@v3.11.1`）、
   [nuclei-templates](https://github.com/projectdiscovery/nuclei-templates) を clone
   して、`.env` の `SAKUDA_NUCLEI_BIN`、`SAKUDA_NUCLEI_TEMPLATES` でそれらを指す。
 - katana をローカルにインストールし（Dockerfile でピン留めしているバージョンの
@@ -385,3 +393,5 @@ ZAP frontend のシードパスにフォールバックします。
 別プロジェクトです: nuclei、katana、httpx、dalfox、nuclei-templates（MIT）は
 イメージのビルド時にチェックサム検証付きでダウンロードされ、ZAP（Apache-2.0）は
 イメージのベースレイヤです。いずれもこのリポジトリには同梱されていません。
+
+プラットフォーム実行は共通の逐次キューでWeb/API・discoveryの後に処理します。独自nucleiバイナリは運用前に3.11.1互換のオフライン検証が必要です。Redis PINGポートは別途明示承認し、既定では送信しません。製品・バージョン識別は応答バナーを取得できる一部のサービス（現在はOpenSSH・Redisの識別情報）に限定し、不明なものは未確認として残します。
